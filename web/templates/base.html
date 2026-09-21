@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>哔哩哔哩视频提取</title><link rel="stylesheet" href="/static/style.css"></head>
+<body><nav><a class="brand" href="/">📺 哔哩哔哩视频提取</a><div class="nav-links"><a href="/">UP主提取</a><a href="/topic">话题提取</a><a href="/single">单作品提取</a></div><button class="outline" onclick="login()">扫码登录哔哩哔哩</button><button class="outline" onclick="clearCache()">清空浏览器缓存</button></nav>
+<main>{% block content %}{% endblock %}</main><div id="toast"></div>
+<script>
+function toast(msg,kind='info'){const el=document.getElementById('toast');el.textContent=msg;el.className=kind;el.style.display='block';setTimeout(()=>el.style.display='none',4500)}
+async function login(){const r=await fetch('/api/login',{method:'POST'}),j=await r.json();toast(j.message||j.error,r.ok?'info':'error')}
+async function clearCache(){if(!confirm('将清除本程序的哔哩哔哩登录状态和浏览器缓存，确定吗？'))return;const r=await fetch('/api/browser-cache',{method:'DELETE'}),j=await r.json();toast(j.message||j.error,r.ok?'success':'error')}
+const fmt=v=>Number(v||0).toLocaleString();
+</script></body></html>
