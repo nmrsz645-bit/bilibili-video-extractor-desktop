@@ -11,9 +11,28 @@ from config import APP_DIR, SESSION_DIR, USER_AGENT
 logger = logging.getLogger(__name__)
 
 
-def _safe_title(value: str) -> str:
+def _safe_component(value: str, *, fallback: str, max_length: int) -> str:
     import re
-    return (re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", (value or "").strip()).rstrip(". ") or "哔哩哔哩视频")[:120]
+    return (re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(value or "").strip()).rstrip(". ") or fallback)[:max_length]
+
+
+def _safe_title(value: str) -> str:
+    return _safe_component(value, fallback="哔哩哔哩视频", max_length=120)
+
+
+def author_download_folder(item: dict) -> str:
+    """返回可在 Windows 下使用且能区分作者的下载子目录名。"""
+    nickname = _safe_component(item.get("author_name", ""), fallback="", max_length=60)
+    mid = _safe_component(item.get("author_mid", ""), fallback="", max_length=32)
+    if mid:
+        return f"{nickname}（{mid}）" if nickname else mid
+    bvid = _safe_component(item.get("bvid", ""), fallback="未知作品", max_length=24)
+    return f"{nickname or '未知作者'}（{bvid}）"
+
+
+def download_output_template(title: str) -> str:
+    """yt-dlp 模板：缺少播放列表索引的单 P 作品也稳定命名为 P01。"""
+    return f"{title} - P%(playlist_index&{{:02d}}|01)s.%(ext)s"
 
 
 def _ffmpeg_location() -> str:
@@ -71,11 +90,13 @@ def download_items(items: list[dict], directory: Path, state: dict):
             export_cookie_file(cookie_file)
             for item in items:
                 title = _safe_title(item.get("title", ""))
+                author_directory = directory / author_download_folder(item)
+                author_directory.mkdir(parents=True, exist_ok=True)
                 state["message"] = f"正在下载：{title}"
                 options = {
                     "format": "bv*+ba/b",
                     "merge_output_format": "mp4",
-                    "outtmpl": str(directory / f"{title} - P%(playlist_index)02d.%(ext)s"),
+                    "outtmpl": str(author_directory / download_output_template(title)),
                     "cookiefile": str(cookie_file),
                     "ffmpeg_location": ffmpeg_location,
                     "noplaylist": False,

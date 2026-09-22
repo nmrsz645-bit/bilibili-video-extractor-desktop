@@ -9,6 +9,8 @@ from openpyxl import load_workbook
 
 import db
 from bilibili_client import BilibiliBrowserClient, parse_bvid, parse_mid
+import downloader
+from downloader import author_download_folder
 
 
 class CoreTests(unittest.TestCase):
@@ -23,7 +25,7 @@ class CoreTests(unittest.TestCase):
         self.folder.cleanup()
 
     def test_parsers_and_view_mapping(self):
-        self.assertEqual(parse_bvid("分享 https://www.bilibili.com/video/BV1xx411c7mD"), "BV1XX411C7MD")
+        self.assertEqual(parse_bvid("分享 https://www.bilibili.com/video/BV1xx411c7mD"), "BV1xx411c7mD")
         self.assertEqual(parse_mid("https://space.bilibili.com/123456"), "123456")
         video = BilibiliBrowserClient._video_from_view({
             "bvid": "BV1xx411c7mD", "aid": 7, "title": "<em>测试</em> 标题", "pubdate": 1700000000,
@@ -81,10 +83,79 @@ class CoreTests(unittest.TestCase):
             "https://www.bilibili.com/video/BV1xx411c7mD",
         ])
 
+    def test_single_video_enters_bilibili_before_fetching_direct_bvid(self):
+        class FakePage:
+            def __init__(self):
+                self.url = "about:blank"
+                self.visits = []
+
+            async def goto(self, url, **_kwargs):
+                self.url = url
+                self.visits.append(url)
+
+        class FakeContext:
+            async def close(self):
+                pass
+
+        class FakePlaywright:
+            async def stop(self):
+                pass
+
+        page = FakePage()
+        client = BilibiliBrowserClient()
+
+        async def fake_launch():
+            return FakePlaywright(), FakeContext(), page
+
+        async def fake_view(current_page, bvid):
+            self.assertEqual(current_page.url, "https://www.bilibili.com/")
+            return {"bvid": bvid}
+
+        client._launch = fake_launch
+        client._view = fake_view
+        videos, failures = asyncio.run(client.fetch_single_videos([
+            "https://www.bilibili.com/video/BV1eUty6xErd"
+        ]))
+        self.assertEqual(failures, [])
+        self.assertEqual(videos, [{"bvid": "BV1eUty6xErd"}])
+        self.assertEqual(page.visits, ["https://www.bilibili.com/"])
+
     def test_single_invalid_link_is_rejected_before_browser(self):
         from web import app as web_app
         response = asyncio.run(web_app.api_single_extract({"urls": "not a bilibili link"}))
         self.assertEqual(response.status_code, 400)
+
+    def test_author_download_folder_uses_safe_name_and_unique_mid(self):
+        self.assertEqual(
+            author_download_folder({"author_name": "同名/UP", "author_mid": "12345", "bvid": "BV1abc"}),
+            "同名_UP（12345）",
+        )
+        self.assertEqual(
+            author_download_folder({"author_name": "", "author_mid": "12345", "bvid": "BV1abc"}),
+            "12345",
+        )
+        self.assertEqual(
+            author_download_folder({"author_name": "", "author_mid": "", "bvid": "BV1abc"}),
+            "未知作者（BV1abc）",
+        )
+
+    def test_download_template_numbers_single_and_multi_part_videos(self):
+        """Replacing the fallback with raw playlist_index would regress single-part names to PNA."""
+        from yt_dlp import YoutubeDL
+
+        template = getattr(
+            downloader,
+            "download_output_template",
+            lambda _title: "%(title)s - P%(playlist_index)02d.%(ext)s",
+        )("测试作品")
+        self.assertEqual(
+            YoutubeDL({"outtmpl": template}).prepare_filename({"title": "测试作品", "ext": "mp4"}),
+            "测试作品 - P01.mp4",
+        )
+        self.assertEqual(
+            YoutubeDL({"outtmpl": template}).prepare_filename({"title": "测试作品", "ext": "mp4", "playlist_index": 3}),
+            "测试作品 - P03.mp4",
+        )
 
 
 if __name__ == "__main__":

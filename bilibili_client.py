@@ -14,7 +14,7 @@ from config import SESSION_DIR, USER_AGENT
 
 logger = logging.getLogger(__name__)
 
-_BV_RE = re.compile(r"\b(BV[0-9A-Za-z]{10})\b", re.IGNORECASE)
+_BV_RE = re.compile(r"\b(BV[0-9A-Za-z]{10})\b")
 _MID_RE = re.compile(r"space\.bilibili\.com/(\d+)|\b(\d{4,})\b", re.IGNORECASE)
 _WBI_MIXIN_TABLE = [
     46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
@@ -26,7 +26,7 @@ _WBI_MIXIN_TABLE = [
 
 def parse_bvid(value: str) -> str | None:
     match = _BV_RE.search(value or "")
-    return match.group(1).upper() if match else None
+    return match.group(1) if match else None
 
 
 def parse_mid(value: str) -> str | None:
@@ -282,6 +282,9 @@ class BilibiliBrowserClient:
             for position, raw_url in enumerate(urls, start=1):
                 try:
                     bvid = await self._resolve_bvid(page, raw_url)
+                    hostname = (urlparse(page.url).hostname or "").lower()
+                    if hostname not in {"bilibili.com", "www.bilibili.com", "m.bilibili.com"}:
+                        await page.goto("https://www.bilibili.com/", wait_until="domcontentloaded", timeout=30_000)
                     video = await self._view(page, bvid)
                     videos.append(video)
                     if on_video:
