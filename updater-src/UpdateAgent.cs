@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
@@ -61,6 +63,100 @@ public static class Updater
         }
         if (!String.Equals(actual, expectedSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Package SHA-256 does not match the manifest.");
         return actual;
+    }
+
+    public static string DownloadAndVerify(Uri packageUri, string expectedSha256, string temporaryDirectory)
+    {
+        RequireHttps(packageUri, "package URL");
+        if (String.IsNullOrWhiteSpace(temporaryDirectory)) throw new InvalidOperationException("Temporary directory is required.");
+
+        Directory.CreateDirectory(temporaryDirectory);
+        string targetPath = Path.Combine(temporaryDirectory, Guid.NewGuid().ToString("N") + ".zip");
+        try
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(packageUri);
+            request.AllowAutoRedirect = false;
+            request.Timeout = 30000;
+            request.ReadWriteTimeout = 30000;
+            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+            {
+                if (response.StatusCode != HttpStatusCode.OK) throw new InvalidOperationException("Package download did not return HTTP 200.");
+                using (Stream source = response.GetResponseStream())
+                using (FileStream destination = File.Create(targetPath))
+                {
+                    source.CopyTo(destination);
+                }
+            }
+            VerifyFileSha256(targetPath, expectedSha256);
+            return targetPath;
+        }
+        catch
+        {
+            if (File.Exists(targetPath)) File.Delete(targetPath);
+            throw;
+        }
+    }
+
+    public static void ValidatePackage(string zipPath, string stagingDirectory, Version expectedVersion)
+    {
+        if (String.IsNullOrWhiteSpace(zipPath) || !File.Exists(zipPath)) throw new InvalidOperationException("Package ZIP is missing.");
+        if (String.IsNullOrWhiteSpace(stagingDirectory)) throw new InvalidOperationException("Staging directory is required.");
+        if (expectedVersion == null) throw new ArgumentNullException("expectedVersion");
+        if (Directory.Exists(stagingDirectory)) Directory.Delete(stagingDirectory, true);
+        Directory.CreateDirectory(stagingDirectory);
+
+        string appRoot = Path.GetFullPath(Path.Combine(stagingDirectory, "app")).TrimEnd(Path.DirectorySeparatorChar);
+        string appPrefix = appRoot + Path.DirectorySeparatorChar;
+        string appEntryRoot = "app" + Path.DirectorySeparatorChar;
+        try
+        {
+            using (ZipArchive archive = ZipFile.OpenRead(zipPath))
+            {
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                {
+                    string name = entry.FullName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                    if (!name.StartsWith(appEntryRoot, StringComparison.Ordinal) && name != appEntryRoot)
+                        throw new InvalidOperationException("ZIP must contain only the app directory.");
+
+                    string target = Path.GetFullPath(Path.Combine(stagingDirectory, name));
+                    if (!String.Equals(target, appRoot, StringComparison.OrdinalIgnoreCase) && !target.StartsWith(appPrefix, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("ZIP contains an unsafe path.");
+
+                    if (String.IsNullOrEmpty(entry.Name)) Directory.CreateDirectory(target);
+                    else
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(target));
+                        entry.ExtractToFile(target, true);
+                    }
+                }
+            }
+            ValidateInstalledApp(Path.Combine(stagingDirectory, "app"), expectedVersion);
+        }
+        catch
+        {
+            if (Directory.Exists(stagingDirectory)) Directory.Delete(stagingDirectory, true);
+            throw;
+        }
+    }
+
+    private static void ValidateInstalledApp(string appDirectory, Version expectedVersion)
+    {
+        if (!Directory.Exists(appDirectory)) throw new InvalidOperationException("Package app directory is missing.");
+        if (Directory.GetFiles(appDirectory, "*.exe").Length != 1) throw new InvalidOperationException("Package GUI executable is missing.");
+        if (!Directory.Exists(Path.Combine(appDirectory, "_internal"))) throw new InvalidOperationException("Package internal directory is missing.");
+        if (!Directory.Exists(Path.Combine(appDirectory, "ms-playwright"))) throw new InvalidOperationException("Package Chromium is missing.");
+        if (!File.Exists(Path.Combine(appDirectory, "tools", "ffmpeg", "bin", "ffmpeg.exe"))) throw new InvalidOperationException("Package ffmpeg is missing.");
+
+        string usageName = new String(new[] { (char)0x4F7F, (char)0x7528, (char)0x8BF4, (char)0x660E }) + ".md";
+        if (!File.Exists(Path.Combine(appDirectory, usageName))) throw new InvalidOperationException("Package usage document is missing.");
+        string versionPath = Path.Combine(appDirectory, "version.json");
+        if (!File.Exists(versionPath)) throw new InvalidOperationException("Package version file is missing.");
+
+        IDictionary<string, object> fields = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(versionPath)) as IDictionary<string, object>;
+        Version packageVersion;
+        if (!Version.TryParse(RequiredString(fields, "version"), out packageVersion)) throw new InvalidOperationException("Package version is invalid.");
+        if (expectedVersion != null && packageVersion.CompareTo(expectedVersion) != 0)
+            throw new InvalidOperationException("Package version does not match the manifest version.");
     }
 
     private static string RequiredString(IDictionary<string, object> fields, string name)

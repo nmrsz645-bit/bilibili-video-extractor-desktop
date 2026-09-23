@@ -15,7 +15,7 @@ if (-not (Test-Path -LiteralPath $compiler)) {
 
 $outputDirectory = Split-Path -Parent $OutputPath
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
-& $compiler /nologo /target:exe /out:$OutputPath /r:System.Web.Extensions.dll $sourcePath
+& $compiler /nologo /target:exe /out:$OutputPath /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Web.Extensions.dll $sourcePath
 if ($LASTEXITCODE -ne 0) {
     throw 'UpdateAgent compilation failed.'
 }
