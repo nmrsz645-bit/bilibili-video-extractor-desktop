@@ -139,6 +139,35 @@ public static class Updater
         }
     }
 
+    public static void ApplyVerifiedApp(string installRoot, string stagedAppDirectory)
+    {
+        if (String.IsNullOrWhiteSpace(installRoot) || String.IsNullOrWhiteSpace(stagedAppDirectory)) throw new InvalidOperationException("Install paths are required.");
+        string app = Path.Combine(installRoot, "app");
+        string backup = Path.Combine(installRoot, "app.previous");
+        if (!Directory.Exists(stagedAppDirectory)) throw new InvalidOperationException("Validated app directory is missing.");
+        if (Directory.Exists(backup)) Directory.Delete(backup, true);
+        try
+        {
+            if (Directory.Exists(app)) Directory.Move(app, backup);
+            Directory.Move(stagedAppDirectory, app);
+            ValidateInstalledApp(app, null);
+            if (Directory.Exists(backup)) Directory.Delete(backup, true);
+        }
+        catch
+        {
+            if (Directory.Exists(app)) Directory.Delete(app, true);
+            if (Directory.Exists(backup)) Directory.Move(backup, app);
+            throw;
+        }
+    }
+
+    public static void RecoverInterruptedUpdate(string installRoot)
+    {
+        string app = Path.Combine(installRoot, "app");
+        string backup = Path.Combine(installRoot, "app.previous");
+        if (!Directory.Exists(app) && Directory.Exists(backup)) Directory.Move(backup, app);
+    }
+
     private static void ValidateInstalledApp(string appDirectory, Version expectedVersion)
     {
         if (!Directory.Exists(appDirectory)) throw new InvalidOperationException("Package app directory is missing.");
@@ -178,6 +207,75 @@ public static class Program
 {
     public static int Main(string[] args)
     {
-        return 2;
+        if (args.Length != 2 || !String.Equals(args[0], "--check", StringComparison.Ordinal)) return 2;
+        try
+        {
+            RunCheck(args[1]);
+            return 0;
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine("Update check failed: " + error.Message);
+            return 1;
+        }
+    }
+
+    private static void RunCheck(string configPath)
+    {
+        if (String.IsNullOrWhiteSpace(configPath) || !File.Exists(configPath)) throw new InvalidOperationException("Updater config is missing.");
+        IDictionary<string, object> config = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(configPath)) as IDictionary<string, object>;
+        string manifestText = RequiredConfigString(config, "manifestUrl");
+        Uri manifestUri;
+        if (!Uri.TryCreate(manifestText, UriKind.Absolute, out manifestUri)) throw new InvalidOperationException("Manifest URL is invalid.");
+        if (!String.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Manifest URL must use HTTPS.");
+
+        string updaterDirectory = Path.GetDirectoryName(typeof(Program).Assembly.Location);
+        string installRoot = Directory.GetParent(updaterDirectory).FullName;
+        Updater.RecoverInterruptedUpdate(installRoot);
+        Version localVersion = ReadLocalVersion(Path.Combine(installRoot, "app", "version.json"));
+        ReleaseManifest remote = Updater.ParseManifest(DownloadText(manifestUri), manifestUri);
+        if (!Updater.IsNewer(remote.Version, localVersion)) return;
+
+        string temporaryDirectory = Path.Combine(Path.GetTempPath(), "bilibili-update-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string zipPath = Updater.DownloadAndVerify(remote.PackageUri, remote.Sha256, temporaryDirectory);
+            string stage = Path.Combine(temporaryDirectory, "stage");
+            Updater.ValidatePackage(zipPath, stage, remote.Version);
+            Updater.ApplyVerifiedApp(installRoot, Path.Combine(stage, "app"));
+        }
+        finally
+        {
+            if (Directory.Exists(temporaryDirectory)) Directory.Delete(temporaryDirectory, true);
+        }
+    }
+
+    private static string DownloadText(Uri uri)
+    {
+        HttpWebRequest request = (HttpWebRequest)WebRequest.Create(uri);
+        request.AllowAutoRedirect = false;
+        request.Timeout = 30000;
+        using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+        {
+            if (response.StatusCode != HttpStatusCode.OK) throw new InvalidOperationException("Manifest download did not return HTTP 200.");
+            using (StreamReader reader = new StreamReader(response.GetResponseStream())) return reader.ReadToEnd();
+        }
+    }
+
+    private static Version ReadLocalVersion(string versionPath)
+    {
+        if (!File.Exists(versionPath)) throw new InvalidOperationException("Local version file is missing.");
+        IDictionary<string, object> fields = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(versionPath)) as IDictionary<string, object>;
+        Version version;
+        if (!Version.TryParse(RequiredConfigString(fields, "version"), out version)) throw new InvalidOperationException("Local version is invalid.");
+        return version;
+    }
+
+    private static string RequiredConfigString(IDictionary<string, object> fields, string name)
+    {
+        object value;
+        if (fields == null || !fields.TryGetValue(name, out value) || !(value is string) || String.IsNullOrWhiteSpace((string)value))
+            throw new InvalidOperationException("Required field '" + name + "' is missing.");
+        return ((string)value).Trim();
     }
 }

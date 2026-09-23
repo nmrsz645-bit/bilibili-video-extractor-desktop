@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Manifest', 'Hash', 'PackageValidation')]
+    [ValidateSet('Manifest', 'Hash', 'PackageValidation', 'Transaction', 'Launcher')]
     [string]$Test = 'Manifest'
 )
 
@@ -107,8 +107,60 @@ function Test-PackageValidation {
     Write-Host 'PASS: PackageValidation'
 }
 
+function New-TestApp {
+    param([string]$AppPath, [string]$Version, [string]$Payload)
+    New-Item -ItemType Directory -Path (Join-Path $AppPath '_internal') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $AppPath 'ms-playwright\chromium-1\chrome-win64') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $AppPath 'tools\ffmpeg\bin') -Force | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $AppPath 'app.exe'), [byte[]](1))
+    [IO.File]::WriteAllText((Join-Path $AppPath 'ms-playwright\chromium-1\chrome-win64\chrome.exe'), 'chromium')
+    [IO.File]::WriteAllText((Join-Path $AppPath 'tools\ffmpeg\bin\ffmpeg.exe'), 'ffmpeg')
+    [IO.File]::WriteAllText((Join-Path $AppPath (Get-UsageFileName)), 'readme')
+    [IO.File]::WriteAllText((Join-Path $AppPath 'version.json'), ('{"version":"' + $Version + '"}'))
+    [IO.File]::WriteAllText((Join-Path $AppPath 'payload.txt'), $Payload)
+}
+
+function Test-Transaction {
+    $updater = Get-UpdaterType
+    $root = Join-Path $PSScriptRoot ('build\updater-test\transaction-' + [Guid]::NewGuid().ToString('N'))
+    $install = Join-Path $root 'install'
+    $stagedApp = Join-Path $root 'stage\app'
+    New-TestApp (Join-Path $install 'app') '1.0.2' 'old-build'
+    New-TestApp $stagedApp '1.0.3' 'new-build'
+    $updater::ApplyVerifiedApp($install, $stagedApp)
+    Assert-Equal 'new-build' ([IO.File]::ReadAllText((Join-Path $install 'app\payload.txt'))) 'new app was not installed'
+
+    $badStage = Join-Path $root 'bad-stage\app'
+    New-Item -ItemType Directory -Path (Join-Path $badStage '_internal') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $badStage 'ms-playwright\chromium-1\chrome-win64') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $badStage 'tools\ffmpeg\bin') -Force | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $badStage 'app.exe'), [byte[]](1))
+    [IO.File]::WriteAllText((Join-Path $badStage 'ms-playwright\chromium-1\chrome-win64\chrome.exe'), 'chromium')
+    [IO.File]::WriteAllText((Join-Path $badStage 'tools\ffmpeg\bin\ffmpeg.exe'), 'ffmpeg')
+    [IO.File]::WriteAllText((Join-Path $badStage (Get-UsageFileName)), 'readme')
+    Assert-Throws { $updater::ApplyVerifiedApp($install, $badStage) } 'version'
+    Assert-Equal 'new-build' ([IO.File]::ReadAllText((Join-Path $install 'app\payload.txt'))) 'failed replacement did not restore old app'
+
+    Move-Item -LiteralPath (Join-Path $install 'app') -Destination (Join-Path $install 'app.previous')
+    $updater::RecoverInterruptedUpdate($install)
+    Assert-True (Test-Path -LiteralPath (Join-Path $install 'app\payload.txt')) 'interrupted update did not recover app'
+    Write-Host 'PASS: Transaction'
+}
+
+function Test-Launcher {
+    Assert-True (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Start-App.cmd')) 'root launcher is missing'
+    $builder = Join-Path $PSScriptRoot 'updater-src\build-updater.ps1'
+    $output = Join-Path $PSScriptRoot ('build\updater-test\cli-' + [Guid]::NewGuid().ToString('N') + '.exe')
+    & $builder -OutputPath $output
+    & $output --check (Join-Path $PSScriptRoot 'build\missing-config.json')
+    Assert-Equal 1 $LASTEXITCODE 'missing updater config must fail the check command'
+    Write-Host 'PASS: Launcher'
+}
+
 switch ($Test) {
     'Manifest' { Test-Manifest }
     'Hash' { Test-Hash }
     'PackageValidation' { Test-PackageValidation }
+    'Transaction' { Test-Transaction }
+    'Launcher' { Test-Launcher }
 }
