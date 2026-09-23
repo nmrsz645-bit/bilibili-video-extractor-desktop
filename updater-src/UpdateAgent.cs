@@ -112,6 +112,7 @@ public static class Updater
         {
             using (ZipArchive archive = ZipFile.OpenRead(zipPath))
             {
+                HashSet<string> extractedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
                     string name = entry.FullName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
@@ -121,6 +122,8 @@ public static class Updater
                     string target = Path.GetFullPath(Path.Combine(stagingDirectory, name));
                     if (!String.Equals(target, appRoot, StringComparison.OrdinalIgnoreCase) && !target.StartsWith(appPrefix, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException("ZIP contains an unsafe path.");
+                    if (!extractedTargets.Add(target))
+                        throw new InvalidOperationException("ZIP contains a duplicate path.");
 
                     if (String.IsNullOrEmpty(entry.Name)) Directory.CreateDirectory(target);
                     else
