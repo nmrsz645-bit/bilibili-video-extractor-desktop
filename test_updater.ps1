@@ -190,7 +190,7 @@ function Test-PackageLayout {
     Assert-True (Test-Path -LiteralPath (Join-Path $distRoot 'Start-App.cmd')) 'launcher missing from release'
     Assert-True (Test-Path -LiteralPath (Join-Path $distRoot 'updater\UpdateAgent.exe')) 'updater missing from release'
     Assert-True (Test-Path -LiteralPath (Join-Path $distRoot 'app\version.json')) 'app version file missing'
-    Assert-Equal '1.0.2' ((Get-Content -LiteralPath (Join-Path $distRoot 'app\version.json') -Raw | ConvertFrom-Json).version) 'wrong packaged version'
+    Assert-Equal '1.0.3' ((Get-Content -LiteralPath (Join-Path $distRoot 'app\version.json') -Raw | ConvertFrom-Json).version) 'wrong packaged version'
     Assert-Equal 1 @(Get-ChildItem -LiteralPath (Join-Path $distRoot 'app') -Filter '*.exe' -File).Count 'GUI EXE must be staged in app'
     Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $distRoot 'app\ms-playwright') -Directory -Filter 'chromium-*' | Get-ChildItem -Recurse -Filter chrome.exe -File).Count -gt 0) 'Chromium missing from app'
     Assert-True (Test-Path -LiteralPath (Join-Path $distRoot 'app\tools\ffmpeg\bin\ffmpeg.exe')) 'ffmpeg missing from app'
