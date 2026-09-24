@@ -6,5 +6,6 @@ browser_session/
 logs/
 dist/
 build/
+packages/
 release-artifacts/
 *.log
