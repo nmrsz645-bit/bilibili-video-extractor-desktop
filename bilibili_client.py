@@ -14,6 +14,11 @@ from config import SESSION_DIR, USER_AGENT
 
 logger = logging.getLogger(__name__)
 
+
+async def _checkpoint(pause_gate):
+    if pause_gate is not None:
+        await pause_gate.checkpoint()
+
 _BV_RE = re.compile(r"\b(BV[0-9A-Za-z]{10})\b")
 _MID_RE = re.compile(r"space\.bilibili\.com/(\d+)|\b(\d{4,})\b", re.IGNORECASE)
 _WBI_MIXIN_TABLE = [
@@ -175,13 +180,16 @@ class BilibiliBrowserClient:
             await p.stop()
 
     async def fetch_creator_videos(self, mid: str, *, start_ts: int | None, end_ts: int | None,
-                                    top_count: int | None, on_video=None, on_progress=None) -> list[dict]:
+                                    top_count: int | None, on_video=None, on_progress=None, pause_gate=None) -> list[dict]:
+        await _checkpoint(pause_gate)
         p, context, page = await self._launch()
         videos: list[dict] = []
         try:
+            await _checkpoint(pause_gate)
             await page.goto(f"https://space.bilibili.com/{mid}", wait_until="domcontentloaded", timeout=30_000)
             page_number = 1
             while True:
+                await _checkpoint(pause_gate)
                 payload = await self._wbi_fetch(page, "/x/space/wbi/arc/search", {
                     "mid": mid, "pn": page_number, "ps": 30, "order": "pubdate",
                 })
@@ -191,6 +199,7 @@ class BilibiliBrowserClient:
                     break
                 stop = False
                 for item in items:
+                    await _checkpoint(pause_gate)
                     published = int(item.get("created", 0) or 0)
                     if top_count is None:
                         if start_ts is not None and published < start_ts:
@@ -208,6 +217,7 @@ class BilibiliBrowserClient:
                         if on_progress:
                             on_progress(len(videos), bvid, str(exc))
                         continue
+                    await _checkpoint(pause_gate)
                     videos.append(video)
                     if on_video:
                         on_video(video)
@@ -225,20 +235,24 @@ class BilibiliBrowserClient:
             await p.stop()
 
     async def fetch_search_videos(self, raw_topic: str, *, start_ts: int | None, end_ts: int | None,
-                                  max_results: int, on_video=None, on_progress=None) -> tuple[str, list[dict]]:
+                                  max_results: int, on_video=None, on_progress=None, pause_gate=None) -> tuple[str, list[dict]]:
+        await _checkpoint(pause_gate)
         p, context, page = await self._launch()
         videos: list[dict] = []
         try:
             query = (raw_topic or "").strip()
             if query.startswith(("http://", "https://")):
+                await _checkpoint(pause_gate)
                 await page.goto(query, wait_until="domcontentloaded", timeout=30_000)
                 query = await page.evaluate("""() => document.querySelector('meta[name=keywords]')?.content || document.title""")
             query = clean_title(query).lstrip("#＃").replace("_哔哩哔哩", "").strip()
             if not query:
                 raise ValueError("未能从话题链接识别关键词，请直接输入话题名或搜索关键词")
+            await _checkpoint(pause_gate)
             await page.goto(f"https://search.bilibili.com/video?keyword={quote(query)}", wait_until="domcontentloaded")
             page_number = 1
             while len(videos) < max_results:
+                await _checkpoint(pause_gate)
                 payload = await self._wbi_fetch(page, "/x/web-interface/wbi/search/type", {
                     "search_type": "video", "keyword": query, "page": page_number, "page_size": 42, "order": "pubdate",
                 })
@@ -246,6 +260,7 @@ class BilibiliBrowserClient:
                 if not items:
                     break
                 for item in items:
+                    await _checkpoint(pause_gate)
                     published = int(item.get("pubdate", 0) or 0)
                     if start_ts is not None and published < start_ts:
                         continue
@@ -260,6 +275,7 @@ class BilibiliBrowserClient:
                         if on_progress:
                             on_progress(len(videos), bvid, str(exc))
                         continue
+                    await _checkpoint(pause_gate)
                     videos.append(video)
                     if on_video:
                         on_video(video)
@@ -275,17 +291,22 @@ class BilibiliBrowserClient:
             await context.close()
             await p.stop()
 
-    async def fetch_single_videos(self, urls: list[str], on_video=None, on_progress=None) -> tuple[list[dict], list[dict]]:
+    async def fetch_single_videos(self, urls: list[str], on_video=None, on_progress=None,
+                                  pause_gate=None) -> tuple[list[dict], list[dict]]:
+        await _checkpoint(pause_gate)
         p, context, page = await self._launch()
         videos, failures = [], []
         try:
             for position, raw_url in enumerate(urls, start=1):
+                await _checkpoint(pause_gate)
                 try:
                     bvid = await self._resolve_bvid(page, raw_url)
+                    await _checkpoint(pause_gate)
                     hostname = (urlparse(page.url).hostname or "").lower()
                     if hostname not in {"bilibili.com", "www.bilibili.com", "m.bilibili.com"}:
                         await page.goto("https://www.bilibili.com/", wait_until="domcontentloaded", timeout=30_000)
                     video = await self._view(page, bvid)
+                    await _checkpoint(pause_gate)
                     videos.append(video)
                     if on_video:
                         on_video(position, raw_url, video)

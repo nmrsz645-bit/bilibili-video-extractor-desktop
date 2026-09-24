@@ -18,6 +18,7 @@ import db
 from bilibili_client import BilibiliBrowserClient, parse_mid
 from config import SESSION_DIR
 from downloader import start_download
+from pause_control import PauseGate
 
 logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).parent
@@ -33,10 +34,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="哔哩哔哩视频提取", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 _login_active = False
-_creator_state = {"running": False, "current": 0, "total": 0, "found": 0, "name": "", "message": ""}
-_topic_state = {"running": False, "current": 0, "total": 0, "found": 0, "label": "", "message": ""}
-_single_state = {"running": False, "current": 0, "total": 0, "found": 0, "failed": 0, "message": ""}
+_creator_state = {"running": False, "paused": False, "current": 0, "total": 0, "found": 0, "name": "", "message": ""}
+_topic_state = {"running": False, "paused": False, "current": 0, "total": 0, "found": 0, "label": "", "message": ""}
+_single_state = {"running": False, "paused": False, "current": 0, "total": 0, "found": 0, "failed": 0, "message": ""}
 _download_state = {"running": False, "total": 0, "done": 0, "failed": 0, "message": ""}
+_extract_states = {"creator": _creator_state, "topic": _topic_state, "single": _single_state}
+_pause_gates = {source: PauseGate() for source in _extract_states}
 SINGLE_URL_PATTERN = re.compile(
     r"https?://(?:(?:www\.)?bilibili\.com/[^\s]+|b23\.tv/[^\s]+)", re.IGNORECASE
 )
@@ -69,6 +72,42 @@ def _parse_range(start_at: str, end_at: str, *, required: bool) -> tuple[int | N
 
 def _is_busy() -> bool:
     return bool(_creator_state["running"] or _topic_state["running"] or _single_state["running"])
+
+
+async def _run_in_thread(work):
+    """请求断开后也等后台提取收尾，避免同步关闭线程池卡住事件循环。"""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        pending = asyncio.get_running_loop().run_in_executor(pool, work)
+        try:
+            return await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            await pending
+            raise
+
+
+def _set_extract_paused(source: str, paused: bool):
+    state = _extract_states.get(source)
+    if state is None:
+        return JSONResponse({"error": "未知提取任务"}, 404)
+    if not state["running"]:
+        return JSONResponse({"error": "当前没有正在运行的提取任务"}, 409)
+    gate = _pause_gates[source]
+    if paused:
+        gate.pause()
+    else:
+        gate.resume()
+    state["paused"] = gate.paused
+    return {"running": True, "paused": state["paused"]}
+
+
+@app.post("/api/extract/{source}/pause")
+async def api_pause_extract(source: str):
+    return _set_extract_paused(source, True)
+
+
+@app.post("/api/extract/{source}/resume")
+async def api_resume_extract(source: str):
+    return _set_extract_paused(source, False)
 
 
 def _normalise_lines(value: str, pattern: re.Pattern, *, deduplicate: bool = True) -> tuple[list[str], list[str]]:
@@ -199,7 +238,7 @@ async def api_refresh_unread():
 
 @app.get("/api/creator-status")
 async def api_creator_status():
-    return _creator_state
+    return {**_creator_state, "pause_waiting": _pause_gates["creator"].waiting}
 
 
 @app.get("/api/creator-results")
@@ -229,7 +268,8 @@ async def api_creator_extract(payload: dict = Body(...)):
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, 400)
     cleared = db.clear_results("creator")
-    _creator_state.update({"running": True, "current": 0, "total": len(creators), "found": 0, "name": "", "message": "准备打开 UP 主空间"})
+    _pause_gates["creator"].resume()
+    _creator_state.update({"running": True, "paused": False, "current": 0, "total": len(creators), "found": 0, "name": "", "message": "准备打开 UP 主空间"})
 
     def _crawl_all():
         failures = []
@@ -242,14 +282,14 @@ async def api_creator_extract(payload: dict = Body(...)):
             try:
                 asyncio.run(BilibiliBrowserClient().fetch_creator_videos(
                     creator["mid"], start_ts=start_ts, end_ts=end_ts, top_count=top_count, on_video=_save,
+                    pause_gate=_pause_gates["creator"],
                 ))
             except Exception as exc:
                 failures.append({"mid": creator["mid"], "error": str(exc)})
         return failures
 
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            failures = await asyncio.get_running_loop().run_in_executor(pool, _crawl_all)
+        failures = await _run_in_thread(_crawl_all)
         _creator_state["message"] = f"提取完成：{_creator_state['found']} 条作品"
         return {"total": _creator_state["found"], "failed": failures, "cleared": cleared}
     except Exception as exc:
@@ -258,11 +298,13 @@ async def api_creator_extract(payload: dict = Body(...)):
         return JSONResponse({"error": _creator_state["message"]}, 502)
     finally:
         _creator_state["running"] = False
+        _creator_state["paused"] = False
+        _pause_gates["creator"].resume()
 
 
 @app.get("/api/topic-status")
 async def api_topic_status():
-    return _topic_state
+    return {**_topic_state, "pause_waiting": _pause_gates["topic"].waiting}
 
 
 @app.get("/api/topic-results")
@@ -288,7 +330,8 @@ async def api_topic_extract(payload: dict = Body(...)):
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, 400)
     cleared = db.clear_results("topic")
-    _topic_state.update({"running": True, "current": 0, "total": max_results, "found": 0, "label": raw_topic, "message": "准备打开搜索或话题页面"})
+    _pause_gates["topic"].resume()
+    _topic_state.update({"running": True, "paused": False, "current": 0, "total": max_results, "found": 0, "label": raw_topic, "message": "准备打开搜索或话题页面"})
 
     def _crawl():
         label = raw_topic
@@ -299,12 +342,12 @@ async def api_topic_extract(payload: dict = Body(...)):
             _topic_state["message"] = f"已即时显示 {_topic_state['found']} 条符合条件的视频"
         label, videos = asyncio.run(BilibiliBrowserClient().fetch_search_videos(
             raw_topic, start_ts=start_ts, end_ts=end_ts, max_results=max_results, on_video=_save,
+            pause_gate=_pause_gates["topic"],
         ))
         _topic_state["label"] = label
         return videos
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            videos = await asyncio.get_running_loop().run_in_executor(pool, _crawl)
+        videos = await _run_in_thread(_crawl)
         _topic_state["message"] = f"提取完成：{len(videos)} 条符合条件的视频"
         return {"total": len(videos), "cleared": cleared}
     except Exception as exc:
@@ -312,11 +355,13 @@ async def api_topic_extract(payload: dict = Body(...)):
         return JSONResponse({"error": _topic_state["message"]}, 502)
     finally:
         _topic_state["running"] = False
+        _topic_state["paused"] = False
+        _pause_gates["topic"].resume()
 
 
 @app.get("/api/single-status")
 async def api_single_status():
-    return _single_state
+    return {**_single_state, "pause_waiting": _pause_gates["single"].waiting}
 
 
 @app.get("/api/single-results")
@@ -334,7 +379,8 @@ async def api_single_extract(payload: dict = Body(...)):
     if len(urls) > 1000:
         return JSONResponse({"error": "一次最多提取 1000 个作品链接"}, 400)
     cleared = db.clear_results("single")
-    _single_state.update({"running": True, "current": 0, "total": len(urls), "found": 0, "failed": 0, "message": "准备打开第一个视频链接"})
+    _pause_gates["single"].resume()
+    _single_state.update({"running": True, "paused": False, "current": 0, "total": len(urls), "found": 0, "failed": 0, "message": "准备打开第一个视频链接"})
     def _crawl():
         def _save(position, input_url, video):
             db.upsert_result("single", video, input_url=input_url, input_order=position - 1)
@@ -345,10 +391,11 @@ async def api_single_extract(payload: dict = Body(...)):
             if error:
                 _single_state["failed"] += 1
                 _single_state["message"] = f"第 {current} 条未读取到资料，正在继续"
-        return asyncio.run(BilibiliBrowserClient().fetch_single_videos(urls, on_video=_save, on_progress=_progress))
+        return asyncio.run(BilibiliBrowserClient().fetch_single_videos(
+            urls, on_video=_save, on_progress=_progress, pause_gate=_pause_gates["single"],
+        ))
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            videos, failures = await asyncio.get_running_loop().run_in_executor(pool, _crawl)
+        videos, failures = await _run_in_thread(_crawl)
         _single_state["message"] = f"完成：成功 {len(videos)} 条，失败 {len(failures)} 条"
         return {"total": len(videos), "failed": failures, "cleared": cleared}
     except Exception as exc:
@@ -357,6 +404,8 @@ async def api_single_extract(payload: dict = Body(...)):
         return JSONResponse({"error": _single_state["message"]}, 502)
     finally:
         _single_state["running"] = False
+        _single_state["paused"] = False
+        _pause_gates["single"].resume()
 
 
 def _xlsx_bytes(source: str) -> bytes:
