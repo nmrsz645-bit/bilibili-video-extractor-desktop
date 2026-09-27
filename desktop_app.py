@@ -47,10 +47,7 @@ def _check_desktop_runtime():
         import clr
         clr.AddReference("System.Windows.Forms")
     except Exception as exc:
-        raise RuntimeError(
-            "此程序需要 Microsoft .NET Framework 4.8.1 或更高版本才能创建桌面窗口。\n\n"
-            "请安装或修复 .NET Framework 后重试：\nhttps://dotnet.microsoft.com/download/dotnet-framework"
-        ) from exc
+        raise RuntimeError("桌面窗口组件加载失败") from exc
 
 
 def _free_port() -> int:
@@ -71,11 +68,12 @@ def _wait(url: str) -> bool:
 
 
 def main():
+    logging.basicConfig(filename=str(USER_DATA_DIR / "desktop.log"), level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s",
+                        encoding="utf-8", force=True)
     _check_desktop_runtime()
     import db
     db.DB_PATH = USER_DATA_DIR / "data" / "bilibili_extractor.db"
-    logging.basicConfig(filename=str(USER_DATA_DIR / "desktop.log"), level=logging.INFO,
-                        format="%(asctime)s [%(levelname)s] %(message)s")
     import uvicorn
     import webview
     from web.app import app
@@ -97,10 +95,15 @@ def main():
         server.should_exit = True
 
 
-if __name__ == "__main__":
+def run() -> int:
     try:
         main()
     except Exception as exc:
         logging.exception("桌面程序启动失败", exc_info=exc)
-        _show_error(str(exc) or "程序启动失败，请查看 desktop.log")
-        raise SystemExit(1)
+        _show_error(f"程序启动失败，具体原因已记录在：\n{USER_DATA_DIR / 'desktop.log'}\n请将日志提供给开发者排查。")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())
