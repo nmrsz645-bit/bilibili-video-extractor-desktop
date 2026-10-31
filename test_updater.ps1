@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Manifest', 'Hash', 'PackageValidation', 'Transaction', 'Launcher', 'PackageLayout')]
+    [ValidateSet('Manifest', 'Hash', 'PackageValidation', 'Transaction', 'Launcher', 'PackageLayout', 'OptInWorkflow')]
     [string]$Test = 'Manifest'
 )
 
@@ -153,6 +153,16 @@ function Test-Transaction {
     $updater::ApplyVerifiedApp($install, $stagedApp)
     Assert-Equal 'new-build' ([IO.File]::ReadAllText((Join-Path $install 'app\payload.txt'))) 'new app was not installed'
 
+    $existingBackup = Join-Path $install 'app.previous'
+    New-Item -ItemType Directory -Path $existingBackup -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $existingBackup 'must-preserve.txt'), 'older-backup')
+    $secondStage = Join-Path $root 'second-stage\app'
+    New-TestApp $secondStage '1.0.4' 'second-build'
+    Assert-Throws { $updater::ApplyVerifiedApp($install, $secondStage) } 'existing app.previous'
+    Assert-Equal 'new-build' ([IO.File]::ReadAllText((Join-Path $install 'app\payload.txt'))) 'existing backup must not disable the current app'
+    Assert-Equal 'older-backup' ([IO.File]::ReadAllText((Join-Path $existingBackup 'must-preserve.txt'))) 'previous backup must not be deleted'
+    Remove-Item -LiteralPath $existingBackup -Recurse -Force
+
     $badStage = Join-Path $root 'bad-stage\app'
     New-Item -ItemType Directory -Path (Join-Path $badStage '_internal') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $badStage 'ms-playwright\chromium-1\chrome-win64') -Force | Out-Null
@@ -168,6 +178,37 @@ function Test-Transaction {
     $updater::RecoverInterruptedUpdate($install)
     Assert-True (Test-Path -LiteralPath (Join-Path $install 'app\payload.txt')) 'interrupted update did not recover app'
     Write-Host 'PASS: Transaction'
+}
+
+function Test-OptInWorkflow {
+    $updater = Get-UpdaterType
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Assert-True ($null -ne $updater.GetMethod('QueueVerifiedPackage')) 'opt-in download must stage a verified package'
+    Assert-True ($null -ne $updater.GetMethod('InstallPendingPackage')) 'a later launcher start must install the staged package'
+    $root = Join-Path $PSScriptRoot ('build\updater-test\opt-in-' + [Guid]::NewGuid().ToString('N'))
+    $install = Join-Path $root 'install'
+    $source = Join-Path $root 'source'
+    $zip = Join-Path $root 'update.zip'
+    New-TestApp (Join-Path $install 'app') '1.0.2' 'old-build'
+    New-TestApp (Join-Path $source 'app') '1.0.3' 'new-build'
+    New-Item -ItemType Directory -Path $root -Force | Out-Null
+    [IO.Compression.ZipFile]::CreateFromDirectory($source, $zip)
+    $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+    $manifest = [ReleaseManifest]::new([Version]'1.0.3', [Uri]'https://example.test/app.zip', $sha)
+    $badHashManifest = [ReleaseManifest]::new([Version]'1.0.3', [Uri]'https://example.test/app.zip', ('0' * 64))
+    Assert-Throws { $updater::QueueVerifiedPackage($install, $zip, $badHashManifest) } 'SHA-256'
+    Assert-Equal 'old-build' ([IO.File]::ReadAllText((Join-Path $install 'app\payload.txt'))) 'bad hash must leave the old app in place'
+    Assert-True (-not (Test-Path -LiteralPath ($updater::GetPendingPackagePath($install)))) 'bad hash must not queue a package'
+    $updater::QueueVerifiedPackage($install, $zip, $manifest)
+    Assert-Equal 'old-build' ([IO.File]::ReadAllText((Join-Path $install 'app\payload.txt'))) 'download choice must not install during the same launch'
+    Assert-True (Test-Path -LiteralPath ($updater::GetPendingPackagePath($install))) 'verified package was not queued'
+    [IO.File]::WriteAllText(($updater::GetPendingPackagePath($install)), 'corrupt-after-queue')
+    Assert-Throws { $updater::InstallPendingPackage($install) } 'SHA-256'
+    Assert-Equal 'old-build' ([IO.File]::ReadAllText((Join-Path $install 'app\payload.txt'))) 'bad queued hash must leave the old app in place'
+    $updater::QueueVerifiedPackage($install, $zip, $manifest)
+    Assert-Equal $true ($updater::InstallPendingPackage($install)) 'next launch must install a queued update'
+    Assert-Equal 'new-build' ([IO.File]::ReadAllText((Join-Path $install 'app\payload.txt'))) 'queued package was not installed on the next launch'
+    Write-Host 'PASS: OptInWorkflow'
 }
 
 function Test-Launcher {
@@ -190,7 +231,7 @@ function Test-PackageLayout {
     Assert-True (Test-Path -LiteralPath (Join-Path $distRoot 'Start-App.cmd')) 'launcher missing from release'
     Assert-True (Test-Path -LiteralPath (Join-Path $distRoot 'updater\UpdateAgent.exe')) 'updater missing from release'
     Assert-True (Test-Path -LiteralPath (Join-Path $distRoot 'app\version.json')) 'app version file missing'
-    Assert-Equal '1.0.2' ((Get-Content -LiteralPath (Join-Path $distRoot 'app\version.json') -Raw | ConvertFrom-Json).version) 'wrong packaged version'
+    Assert-Equal '1.0.3' ((Get-Content -LiteralPath (Join-Path $distRoot 'app\version.json') -Raw | ConvertFrom-Json).version) 'wrong packaged version'
     Assert-Equal 1 @(Get-ChildItem -LiteralPath (Join-Path $distRoot 'app') -Filter '*.exe' -File).Count 'GUI EXE must be staged in app'
     Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $distRoot 'app\ms-playwright') -Directory -Filter 'chromium-*' | Get-ChildItem -Recurse -Filter chrome.exe -File).Count -gt 0) 'Chromium missing from app'
     Assert-True (Test-Path -LiteralPath (Join-Path $distRoot 'app\tools\ffmpeg\bin\ffmpeg.exe')) 'ffmpeg missing from app'
@@ -206,4 +247,5 @@ switch ($Test) {
     'Transaction' { Test-Transaction }
     'Launcher' { Test-Launcher }
     'PackageLayout' { Test-PackageLayout }
+    'OptInWorkflow' { Test-OptInWorkflow }
 }

@@ -69,6 +69,33 @@ class CoreTests(unittest.TestCase):
         self.assertEqual([row["input_url"] for row in rows], ["first", "second"])
         self.assertEqual([row["title"] for row in rows], ["第一次", "第二次"])
 
+    def test_creator_results_and_xlsx_follow_added_author_order(self):
+        from web import app as web_app
+
+        db.add_creator("1001", "https://space.bilibili.com/1001")
+        db.add_creator("1002", "https://space.bilibili.com/1002")
+        db.update_creator_profile("1001", {"nickname": "Z作者"})
+        db.update_creator_profile("1002", {"nickname": "A作者"})
+        for bvid, mid, name, published in [
+            ("BV1A", "1002", "A作者", 30),
+            ("BV1Zold", "1001", "Z作者", 10),
+            ("BV1Znew", "1001", "Z作者", 20),
+        ]:
+            db.upsert_result("creator", {
+                "bvid": bvid, "author_mid": mid, "author_name": name,
+                "title": bvid, "published_at": published, "pages": [],
+            })
+
+        self.assertEqual(
+            [row["bvid"] for row in db.list_results("creator")],
+            ["BV1Znew", "BV1Zold", "BV1A"],
+        )
+        worksheet = load_workbook(BytesIO(web_app._xlsx_bytes("creator"))).active
+        self.assertEqual(
+            [worksheet.cell(row, 1).value for row in range(2, 5)],
+            ["Z作者", "Z作者", "A作者"],
+        )
+
     def test_single_link_normalization_keeps_duplicate_lines(self):
         from web import app as web_app
         links, invalid = web_app._normalise_lines(

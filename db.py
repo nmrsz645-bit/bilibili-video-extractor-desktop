@@ -165,13 +165,18 @@ def upsert_result(source: str, video: dict, *, query_label: str = "", input_url:
 
 def list_results(source: str) -> list[dict]:
     _assert_source(source)
-    ordering = (
-        "author_name COLLATE NOCASE ASC, published_at DESC, id DESC" if source == "creator"
-        else "input_order ASC, id ASC" if source == "single"
-        else "published_at DESC, id DESC"
-    )
     with get_db() as db:
-        rows = db.execute(f"SELECT * FROM video_results WHERE source=? ORDER BY {ordering}", (source,)).fetchall()
+        if source == "creator":
+            rows = db.execute("""
+                SELECT video_results.* FROM video_results
+                LEFT JOIN creators ON creators.mid = video_results.author_mid
+                WHERE video_results.source = ?
+                ORDER BY creators.id IS NULL, creators.id ASC,
+                         video_results.published_at DESC, video_results.id DESC
+            """, (source,)).fetchall()
+        else:
+            ordering = "input_order ASC, id ASC" if source == "single" else "published_at DESC, id DESC"
+            rows = db.execute(f"SELECT * FROM video_results WHERE source=? ORDER BY {ordering}", (source,)).fetchall()
     result = []
     for row in rows:
         value = dict(row)

@@ -1,0 +1,1 @@
+window.BILIBILI_VIDEO_EXTRACTOR_LATEST = {"version":"1.0.3","fullPackageUrl":"https://luotuoruanjiangengx.oss-cn-beijing.aliyuncs.com/updates/bilibili-video-extractor-1.0.3-windows-x64.zip"};

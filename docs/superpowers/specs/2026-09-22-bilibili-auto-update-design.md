@@ -2,14 +2,16 @@
 
 ## 目标
 
-发布 v1.0.2，使安装 v1.0.2 或更高版本的 Windows 用户在每次启动前，从 HTTPS 更新清单同步检查、校验并安装后续版本。v1.0.0 和 v1.0.1 不含更新器，必须手动安装一次 v1.0.2 完整包。
+原计划发布 v1.0.2，并在启动时自动安装；该行为已由用户后续决定取代。当前执行目标为 v1.0.3：用户先选择是否下载；同意后只下载并校验，当前启动继续运行旧版；程序关闭后，下次启动才安装暂存版本。断网、拒绝下载、校验或替换失败时继续运行旧版。
+
+v1.0.0、v1.0.1、v1.0.2 的既有客户端仍可能使用旧清单协议，因此 v1.0.3 改用 `/updates/bilibili-video-extractor-desktop/opt-in/latest.json`。发布时保留旧清单不变；用户需从下载站手动安装一次 v1.0.3 完整包，以进入新的选择式更新通道。
 
 ## 范围与约束
 
 - 不改变 BVID 解析、提取、下载、登录或 XLSX 功能。
 - 不读取、写入、打包或上传用户的登录态、数据库、Cookie、日志或下载视频。
 - 用户数据继续只保存于 `%LOCALAPPDATA%\哔哩哔哩视频提取`。
-- 更新清单及更新 ZIP 必须为 HTTPS；清单必须含 `version`、`url`、`sha256`。
+- 更新清单及更新 ZIP 必须为 HTTPS；新选择式清单必须含 `version`、`url`、`sha256`。
 - 仅替换安装目录中的 `app\`；启动器与更新器永不自我替换。
 - 失败时恢复旧 `app\`，然后照常启动旧版 GUI。
 - 完整安装 ZIP 与自动更新载荷 ZIP 分开发布，均为不可变版本文件并各自校验。
@@ -37,7 +39,8 @@
 
 1. 用户启动 `Start-App.cmd`。
 2. 它同步执行 `updater\UpdateAgent.exe --check updater\updater-config.json`，然后无论更新检查成功与否都启动 `app\` 内唯一 GUI EXE。
-3. 更新器恢复可能遗留的 `app.previous\`，读取本地 `app\version.json`，再读取 HTTPS `latest.json`。
+3. 更新器先处理已校验的暂存包；没有暂存包时，读取本地 `app\version.json` 和 HTTPS 选择式清单，询问用户是否下载。
+4. 用户同意后只暂存完整性已验证的 app-only ZIP；本次继续启动旧 GUI，直到用户关闭程序并再次启动才替换 `app\`。
 4. 远端版本不高于本地版本时不做任何替换；更高时下载版本化更新 ZIP 到短临时目录。
 5. 更新器严格验证 SHA-256、ZIP 路径安全性、ZIP 只含 `app\`、GUI EXE、`_internal\`、Chromium、ffmpeg、使用说明和与清单一致的版本文件。
 6. 验证后将原 `app\` 重命名为 `app.previous\`，将暂存 `app\` 改名为正式目录；验证最终目录后删除备份。任一步失败则恢复备份。
@@ -49,7 +52,7 @@
 更新器配置固定指向：
 
 ```text
-https://luotuoruanjiangengx.oss-cn-beijing.aliyuncs.com/updates/bilibili-video-extractor-desktop/latest.json
+https://luotuoruanjiangengx.oss-cn-beijing.aliyuncs.com/updates/bilibili-video-extractor-desktop/opt-in/latest.json
 ```
 
 清单最小格式：

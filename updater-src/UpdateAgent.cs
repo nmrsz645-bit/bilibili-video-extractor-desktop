@@ -6,6 +6,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
+using System.Windows.Forms;
 
 public sealed class ReleaseManifest
 {
@@ -23,6 +24,12 @@ public sealed class ReleaseManifest
 
 public static class Updater
 {
+    private sealed class PendingUpdate
+    {
+        public string version { get; set; }
+        public string sha256 { get; set; }
+    }
+
     public static bool IsNewer(Version remote, Version local)
     {
         if (remote == null) throw new ArgumentNullException("remote");
@@ -148,19 +155,97 @@ public static class Updater
         string app = Path.Combine(installRoot, "app");
         string backup = Path.Combine(installRoot, "app.previous");
         if (!Directory.Exists(stagedAppDirectory)) throw new InvalidOperationException("Validated app directory is missing.");
-        if (Directory.Exists(backup)) Directory.Delete(backup, true);
+        if (Directory.Exists(backup)) throw new InvalidOperationException("An existing app.previous backup must be reviewed before updating.");
+        bool movedOldApp = false;
         try
         {
-            if (Directory.Exists(app)) Directory.Move(app, backup);
+            if (Directory.Exists(app))
+            {
+                Directory.Move(app, backup);
+                movedOldApp = true;
+            }
             Directory.Move(stagedAppDirectory, app);
             ValidateInstalledApp(app, null);
             if (Directory.Exists(backup)) Directory.Delete(backup, true);
         }
         catch
         {
-            if (Directory.Exists(app)) Directory.Delete(app, true);
-            if (Directory.Exists(backup)) Directory.Move(backup, app);
+            if (movedOldApp)
+            {
+                if (Directory.Exists(app)) Directory.Delete(app, true);
+                if (Directory.Exists(backup)) Directory.Move(backup, app);
+            }
             throw;
+        }
+    }
+
+    public static string GetPendingPackagePath(string installRoot)
+    {
+        if (String.IsNullOrWhiteSpace(installRoot)) throw new InvalidOperationException("Install root is required.");
+        return Path.Combine(installRoot, "updater", "pending.zip");
+    }
+
+    public static void QueueVerifiedPackage(string installRoot, string zipPath, ReleaseManifest manifest)
+    {
+        if (manifest == null) throw new ArgumentNullException("manifest");
+        string actualHash = VerifyFileSha256(zipPath, manifest.Sha256);
+        string work = Path.Combine(Path.GetTempPath(), "bili-queue-" + Guid.NewGuid().ToString("N"));
+        string stage = Path.Combine(work, "stage");
+        string pendingPath = GetPendingPackagePath(installRoot);
+        string pendingDirectory = Path.GetDirectoryName(pendingPath);
+        Directory.CreateDirectory(work);
+        try
+        {
+            ValidatePackage(zipPath, stage, manifest.Version);
+            Directory.CreateDirectory(pendingDirectory);
+            string temporaryZip = pendingPath + ".tmp";
+            string temporaryMetadata = pendingPath + ".json.tmp";
+            File.Copy(zipPath, temporaryZip, true);
+            VerifyFileSha256(temporaryZip, actualHash);
+            File.WriteAllText(temporaryMetadata,
+                new JavaScriptSerializer().Serialize(new PendingUpdate { version = manifest.Version.ToString(), sha256 = actualHash }),
+                new System.Text.UTF8Encoding(false));
+            string metadataPath = Path.ChangeExtension(pendingPath, ".json");
+            if (File.Exists(pendingPath)) File.Delete(pendingPath);
+            if (File.Exists(metadataPath)) File.Delete(metadataPath);
+            File.Move(temporaryZip, pendingPath);
+            File.Move(temporaryMetadata, metadataPath);
+        }
+        finally
+        {
+            if (Directory.Exists(work)) Directory.Delete(work, true);
+        }
+    }
+
+    public static bool InstallPendingPackage(string installRoot)
+    {
+        string pendingPath = GetPendingPackagePath(installRoot);
+        string metadataPath = Path.ChangeExtension(pendingPath, ".json");
+        bool hasZip = File.Exists(pendingPath);
+        bool hasMetadata = File.Exists(metadataPath);
+        if (!hasZip && !hasMetadata) return false;
+        if (!hasZip || !hasMetadata) throw new InvalidOperationException("Pending update files are incomplete.");
+
+        IDictionary<string, object> fields = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(metadataPath)) as IDictionary<string, object>;
+        Version expectedVersion;
+        if (!Version.TryParse(RequiredString(fields, "version"), out expectedVersion)) throw new InvalidOperationException("Pending update version is invalid.");
+        string expectedSha256 = RequiredString(fields, "sha256");
+        VerifyFileSha256(pendingPath, expectedSha256);
+
+        string work = Path.Combine(Path.GetTempPath(), "bili-install-" + Guid.NewGuid().ToString("N"));
+        string stage = Path.Combine(work, "stage");
+        Directory.CreateDirectory(work);
+        try
+        {
+            ValidatePackage(pendingPath, stage, expectedVersion);
+            ApplyVerifiedApp(installRoot, Path.Combine(stage, "app"));
+            File.Delete(pendingPath);
+            File.Delete(metadataPath);
+            return true;
+        }
+        finally
+        {
+            if (Directory.Exists(work)) Directory.Delete(work, true);
         }
     }
 
@@ -235,21 +320,38 @@ public static class Program
         string updaterDirectory = Path.GetDirectoryName(typeof(Program).Assembly.Location);
         string installRoot = Directory.GetParent(updaterDirectory).FullName;
         Updater.RecoverInterruptedUpdate(installRoot);
+        if (Updater.InstallPendingPackage(installRoot)) return;
         Version localVersion = ReadLocalVersion(Path.Combine(installRoot, "app", "version.json"));
         ReleaseManifest remote = Updater.ParseManifest(DownloadText(manifestUri), manifestUri);
         if (!Updater.IsNewer(remote.Version, localVersion)) return;
+
+        if (!ConfirmDownload(remote.Version, localVersion)) return;
 
         string temporaryDirectory = Path.Combine(Path.GetTempPath(), "bilibili-update-" + Guid.NewGuid().ToString("N"));
         try
         {
             string zipPath = Updater.DownloadAndVerify(remote.PackageUri, remote.Sha256, temporaryDirectory);
-            string stage = Path.Combine(temporaryDirectory, "stage");
-            Updater.ValidatePackage(zipPath, stage, remote.Version);
-            Updater.ApplyVerifiedApp(installRoot, Path.Combine(stage, "app"));
+            Updater.QueueVerifiedPackage(installRoot, zipPath, remote);
+            MessageBox.Show("更新包已下载并校验。关闭程序后，下次启动时安装新版本。", "更新已准备", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         finally
         {
             if (Directory.Exists(temporaryDirectory)) Directory.Delete(temporaryDirectory, true);
+        }
+    }
+
+    private static bool ConfirmDownload(Version remote, Version local)
+    {
+        try
+        {
+            DialogResult answer = MessageBox.Show(
+                "发现新版本 v" + remote + "（当前 v" + local + "）。\n\n是否下载？下载完成后会在关闭程序、下次启动时安装。\n网络或校验失败时仍会启动当前版本。",
+                "发现更新", MessageBoxButtons.YesNo, MessageBoxIcon.Information, MessageBoxDefaultButton.Button2);
+            return answer == DialogResult.Yes;
+        }
+        catch
+        {
+            return false;
         }
     }
 

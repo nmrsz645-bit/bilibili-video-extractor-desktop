@@ -4,7 +4,7 @@
 
 开发测试：先双击 `Setup-Dev.cmd` 安装 Python 依赖与 Chromium，再双击 `启动哔哩哔哩视频提取.vbs`。该启动文件不会显示命令框；`Start-Dev.cmd` 也会后台启动，不会保留命令框。
 
-发布包：用户应从解压后的根目录双击 `Start-App.cmd`。它会先校验 HTTPS 更新清单和完整包 SHA-256；有新版时仅替换 `app/`，校验失败或更新中断会恢复上一版，再启动当前可用程序。不要直接运行 `app` 内的 EXE，否则不会检查更新。
+发布包：用户应从解压后的根目录双击 `Start-App.cmd`。有新版时会先询问是否下载；同意后只下载并校验更新包，本次仍启动当前版本。关闭程序后，下次启动才应用已暂存的更新。断网、拒绝下载或校验/替换失败时，启动器继续运行旧版。不要直接运行 `app` 内的 EXE，否则不会检查更新。
 
 构建发布包：在隔离构建目录创建 `.venv` 并安装 `requirements.txt`、`pyinstaller` 后，运行 `powershell.exe -ExecutionPolicy Bypass -File .\build.ps1`。更新器测试也必须使用 Windows PowerShell 5.1（`powershell.exe`）；可用 `BILIBILI_PLAYWRIGHT_BROWSERS_PATH` 和 `BILIBILI_FFMPEG_EXE` 覆盖 Chromium 与 ffmpeg 的来源路径。构建不会读取或复制 `data`、`browser_session`、`logs`。
 
