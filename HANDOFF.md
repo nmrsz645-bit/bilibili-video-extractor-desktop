@@ -1,12 +1,12 @@
 # 下一位 Codex：哔哩哔哩视频提取交接
 
-更新于 2026-10-31。先读 [README.md](README.md) 的用户操作与常见错误，再看本文件。这里记录的是已核实的仓库状态；历史设计文件在 `docs/superpowers/`，不能代替当前源码和发布验证。
+更新于 2026-10-31。先读 [README.md](README.md) 的用户操作与常见错误；新电脑接手、更新与网站发布以 [docs/RELEASE-GUIDE.md](docs/RELEASE-GUIDE.md) 为入口，再看本文件。这里记录的是已核实的仓库状态；历史设计文件在 `docs/superpowers/`，不能代替当前源码和发布验证。
 
 ## 1. 用途、当前版本与边界
 
 - 独立 Windows x64 工具：UP 主投稿、关键词/话题、单作品提取；SQLite 保存结果；XLSX 导出；yt-dlp/FFmpeg 下载当前登录账号可访问的画质。旧抖音项目只能参考，不能读写其用户数据。
 - **正式程序仍为 v1.0.4**，`version.json`、Git 标签 `v1.0.4`、正式源码提交 `8ef06c1bb9e4551dea7b31c8f67560c347c7f0ca`。对应 [GitHub Release](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4) 的 Windows 完整包 `bilibili-video-extractor-desktop-1.0.4-windows-x64.zip`：486,354,789 字节，SHA-256 `20CE45C39979986608535E1A87DF99199BCE6037004731D1CFCECD79E1FE6C80`。文档提交在标签之后，不代表正式二进制已重建。
-- 另有 [`codex/startup-diagnostics`](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/tree/codex/startup-diagnostics) 分支，提交 `8bc22b97d6c87e8b61675428a8969f9c2f98cb3b`，仅改进启动异常日志与提示，**未合入 `master`、未打正式新版本、未替换 v1.0.4 Release**。不要把诊断包或该分支称作 v1.0.5。
+- 另有 [`codex/startup-diagnostics`](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/tree/codex/startup-diagnostics) 分支，提交 `8bc22b97d6c87e8b61675428a8969f9c2f98cb3b`，仅改进启动异常日志与提示。[v1.0.4-startup-diagnostics](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4-startup-diagnostics) 是非 Latest 诊断预发布，**未合入 `master`、未打正式新版本、未替换 v1.0.4 Release**。不要把诊断包或该分支称作 v1.0.5。
 - GitHub 仓库是现有公开仓库 `nmrsz645-bit/bilibili-video-extractor-desktop`；保持原有可见性。`master` 不含 GitHub Actions 工作流，生产自动更新取自独立 OSS HTTPS 清单；推送源码本身不是生产发布。
 
 ## 2. 架构与关键文件

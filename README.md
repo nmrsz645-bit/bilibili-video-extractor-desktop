@@ -2,7 +2,7 @@
 
 独立的 Windows x64 桌面程序，可提取 UP 主投稿、关键词/话题搜索结果和单个视频的信息，导出 XLSX，并下载当前登录账号可获取的最高画质视频。它不读取或写入旧抖音程序的数据。
 
-**正式版：v1.0.4。** [源码标签](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/tree/v1.0.4)对应提交 `8ef06c1`；[GitHub Release](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4)提供 Windows 完整包。该 ZIP 的 SHA-256 是 `20CE45C39979986608535E1A87DF99199BCE6037004731D1CFCECD79E1FE6C80`。本文件后续的文档修订不改变已发布的 v1.0.4 二进制内容。维护者请先读 [HANDOFF.md](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/blob/master/HANDOFF.md)。
+**正式版：v1.0.4。** [源码标签](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/tree/v1.0.4)对应提交 `8ef06c1`；[GitHub Release](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4)提供 Windows 完整包。该 ZIP 的 SHA-256 是 `20CE45C39979986608535E1A87DF99199BCE6037004731D1CFCECD79E1FE6C80`。本文件后续的文档修订不改变已发布的 v1.0.4 二进制内容。新电脑接手、更新推送与网站上架先读 [RELEASE-GUIDE.md](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/blob/master/docs/RELEASE-GUIDE.md)，再读 [HANDOFF.md](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/blob/master/HANDOFF.md)。
 
 ## 下载、安装与启动
 
@@ -47,7 +47,7 @@
 | UP 主资料未读取，接口返回 `-352` | 打开本程序的扫码登录窗口完成登录，再点「一键读取未读取资料」。平台接口也可能临时限制访问，稍后重试。 |
 | 找不到 FFmpeg、只有音频或视频半成品 | 使用完整 ZIP 并保持 `app/tools/ffmpeg/bin/ffmpeg.exe`；不要只复制 EXE。 |
 | 自动更新失败或新包无法启动 | 保留安装目录和用户数据，重新运行根目录 `Start-App.cmd`，检查网络、清单和 ZIP 校验；不要把完整包当作更新载荷。记录报错后联系维护者。 |
-| 需要诊断启动错误 | 正式 v1.0.4 的早期 .NET 检查可能不留下完整日志。单独的 [`codex/startup-diagnostics` 源码分支](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/tree/codex/startup-diagnostics)改为记录原始异常，但**不是正式版更新**。分享日志前可遮住个人路径等信息。 |
+| 需要诊断启动错误 | 正式 v1.0.4 的早期 .NET 检查可能不留下完整日志。[启动诊断预发布](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4-startup-diagnostics)基于 [`codex/startup-diagnostics` 源码分支](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/tree/codex/startup-diagnostics)，可记录原始异常，但**不是正式版更新**。分享日志前可遮住个人路径等信息。 |
 
 ## 开发与验证
 
