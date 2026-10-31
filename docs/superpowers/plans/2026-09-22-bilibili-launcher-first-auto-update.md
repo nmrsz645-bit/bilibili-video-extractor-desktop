@@ -345,7 +345,7 @@ Expected: manifest reports v1.0.2 with the published immutable update ZIP and ma
 
 ```powershell
 git -C C:\软件\bilibili提取 status --short
-git -C 'C:\Users\Administrator\Documents\ChatGPT\更新 2\software-download-center' status --short
+git -C '<software-download-center-checkout>' status --short
 ```
 
 Expected: the source repository contains only updater source/build/docs changes, and the site repository contains only the Bilibili card/script update. Never commit generated ZIPs, tests' LocalAppData fixture, or user data.
