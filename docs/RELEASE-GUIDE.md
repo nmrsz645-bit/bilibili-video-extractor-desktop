@@ -1,12 +1,13 @@
 # 哔哩哔哩视频提取：新电脑接手与发布指南
 
-更新于 2026-10-31。本文是本项目的操作入口；网站通用规则另见[网站接手指南](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#website)、[卡片机制](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#catalog)、[发布顺序](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#client-update)、[验证与回滚](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#verify-rollback)和[凭证](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#credentials)。以下命令用于**以后获得发布授权的操作员**；本次只写文档，没有执行生产上传、切换清单或网站部署。
+更新于 2026-11-01。本文是本项目的发布操作入口；可直接复制给另一台电脑 Codex 的接手消息在仓库根目录 [HANDOFF.md](../HANDOFF.md#0-发给另一台电脑-codex-的第一条消息)。网站通用规则另见[网站接手指南](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#website)、[卡片机制](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#catalog)、[发布顺序](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#client-update)、[验证与回滚](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#verify-rollback)和[凭证](https://github.com/nmrsz645-bit/software-download-center/blob/docs-cross-pc-handoff/docs/PUBLISHING.md#credentials)。以下命令用于**以后获得发布授权的操作员**；此次交接文档修订没有执行生产上传、切换清单或网站部署。
 
 ## 1. 仓库、版本与新电脑
 
 - 源码仓库：`https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop.git`，默认 `master`。2026-10-31 核对时没有本仓库 GitHub Actions 工作流或 Pages；源码推送不会自动修改 OSS 客户端清单或下载站。先确认远端状态，不强推、不覆盖他人提交。
 - 正式稳定版是 [v1.0.4](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4)，标签提交 `8ef06c1bb9e4551dea7b31c8f67560c347c7f0ca`；应用内 `version.json` 是 `1.0.4`。`master` 在标签之后可有文档提交，不能据此声称二进制已更新。
 - [v1.0.4-startup-diagnostics](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4-startup-diagnostics) 是非 Latest 诊断预发布，源码提交 `8bc22b97d6c87e8b61675428a8969f9c2f98cb3b`，应用版本也仍是 `1.0.4`。它只改启动异常日志/提示，不是 v1.0.5，不得替换正式包或写入生产清单。
+- [历史备份分支](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/blob/backup/existing-safe-20261031/BACKUP-SNAPSHOT.md) 与[备份附件](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/backup-existing-safe-20261031) 保存了未合入的旧版选择式更新原型；只供核对和恢复，不属于正式版或当前自动更新通道。
 
 ```powershell
 git clone https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop.git

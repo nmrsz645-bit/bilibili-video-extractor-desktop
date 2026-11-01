@@ -1,12 +1,19 @@
 # 下一位 Codex：哔哩哔哩视频提取交接
 
-更新于 2026-10-31。先读 [README.md](README.md) 的用户操作与常见错误；新电脑接手、更新与网站发布以 [docs/RELEASE-GUIDE.md](docs/RELEASE-GUIDE.md) 为入口，再看本文件。这里记录的是已核实的仓库状态；历史设计文件在 `docs/superpowers/`，不能代替当前源码和发布验证。
+更新于 2026-11-01。先读 [README.md](README.md) 的用户操作与常见错误；新电脑接手、更新与网站发布以 [docs/RELEASE-GUIDE.md](docs/RELEASE-GUIDE.md) 为入口，再看本文件。这里记录的是已核实的仓库状态；历史设计文件在 `docs/superpowers/`，不能代替当前源码和发布验证。
+
+## 0. 发给另一台电脑 Codex 的第一条消息
+
+> 请接手我的独立项目「哔哩哔哩视频提取」。源码仓库是 `https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop.git`，从 `master` 正常克隆，不覆盖本机已有文件。先读仓库根目录的 `README.md`、`HANDOFF.md` 和 `docs/RELEASE-GUIDE.md`，核对当前分支、远端、正式标签/Release、`version.json` 和工作树状态。正式版目前是 v1.0.4；诊断预发布与 `backup/existing-safe-20261031` 历史原型都不是正式更新。先向我报告已取得的源码、缺少的本机依赖/权限、现有程序如何运行，以及完整包、仅含 `app/` 的更新包、OSS `latest.json` 和下载站静态卡片的发布顺序与验证办法。保留登录资料、数据库、用户文件和其他工作树；不要复制旧电脑的浏览器登录态。没有实际验证前，不要声称新电脑已能构建或已让用户升级。除非我明确要求发布，不要修改版本、上传 OSS、切换清单或网站。
+
+另一个 Codex 应先按 [docs/RELEASE-GUIDE.md](docs/RELEASE-GUIDE.md) 的新机准备命令安装依赖、用隔离数据目录验证，再处理具体开发或发布任务。GitHub 源码权限和 OSS 上传权限分别在新电脑通过获授权的交互登录/短时凭据取得；仓库不提供私钥、Cookie 或用户数据。
 
 ## 1. 用途、当前版本与边界
 
 - 独立 Windows x64 工具：UP 主投稿、关键词/话题、单作品提取；SQLite 保存结果；XLSX 导出；yt-dlp/FFmpeg 下载当前登录账号可访问的画质。旧抖音项目只能参考，不能读写其用户数据。
 - **正式程序仍为 v1.0.4**，`version.json`、Git 标签 `v1.0.4`、正式源码提交 `8ef06c1bb9e4551dea7b31c8f67560c347c7f0ca`。对应 [GitHub Release](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4) 的 Windows 完整包 `bilibili-video-extractor-desktop-1.0.4-windows-x64.zip`：486,354,789 字节，SHA-256 `20CE45C39979986608535E1A87DF99199BCE6037004731D1CFCECD79E1FE6C80`。文档提交在标签之后，不代表正式二进制已重建。
 - 另有 [`codex/startup-diagnostics`](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/tree/codex/startup-diagnostics) 分支，提交 `8bc22b97d6c87e8b61675428a8969f9c2f98cb3b`，仅改进启动异常日志与提示。[v1.0.4-startup-diagnostics](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/v1.0.4-startup-diagnostics) 是非 Latest 诊断预发布，**未合入 `master`、未打正式新版本、未替换 v1.0.4 Release**。不要把诊断包或该分支称作 v1.0.5。
+- [`backup/existing-safe-20261031`](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/blob/backup/existing-safe-20261031/BACKUP-SNAPSHOT.md) 保存了旧工作树的 v1.0.3 选择式更新原型及安全源码快照；同名非 Latest [备份附件](https://github.com/nmrsz645-bit/bilibili-video-extractor-desktop/releases/tag/backup-existing-safe-20261031) 只供恢复/审查。它不是目前 `master` 的更新机制，不要直接合并、部署或当成正式 v1.0.3 包。
 - GitHub 仓库是现有公开仓库 `nmrsz645-bit/bilibili-video-extractor-desktop`；保持原有可见性。`master` 不含 GitHub Actions 工作流，生产自动更新取自独立 OSS HTTPS 清单；推送源码本身不是生产发布。
 
 ## 2. 架构与关键文件
@@ -60,7 +67,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 - **GitHub 交付**：核对 `version.json`、待发布提交与安全扫描；打包后检查完整 ZIP 的 CRC、内容布局和 SHA-256，使用隔离 `LOCALAPPDATA` 从解压包启动；创建与提交一致的新标签和 Release，上传完整包后从 GitHub 核实附件大小、哈希和可下载性。不要覆盖 v1.0.4 的附件或改写其标签。文档可在 `master` 更新，但必须说明标签后的文档提交不改变二进制。
 - **完整包**根目录应有 `Start-App.cmd`、`updater/`、`app/`，供人手动解压。**自动更新载荷**只能含 `app/`，里面须有 `version.json`、Chromium、FFmpeg 和说明文件。两者不能混用。
-- **生产自动更新与下载站**不归本次 GitHub 文档任务：历史流程是先上传不可变包并公网回读校验，再更新 OSS `latest.json`/下载目录，最后验证旧版隔离升级和网站。当前公开清单指向 v1.0.4 更新 ZIP，SHA-256 `033031844707EB53F089C6C42CAA668C18672F0BF36AA90504311BB7A17E8AB1`。未来改生产前需独立检查权限、URL、哈希、完整包/更新包布局和旧版升级；不要把源码推送等同于客户端已更新。
+- **生产自动更新与下载站**的本项目步骤、对象 key、清单字段、网站卡片、验证与回滚见 [docs/RELEASE-GUIDE.md](docs/RELEASE-GUIDE.md)。先上传不可变包并公网回读校验、用非生产清单验证旧版隔离升级，再切换 OSS `latest.json`，最后更新网站静态卡片。当前公开清单指向 v1.0.4 更新 ZIP，SHA-256 `033031844707EB53F089C6C42CAA668C18672F0BF36AA90504311BB7A17E8AB1`。未来改生产前需独立检查权限、URL、哈希、完整包/更新包布局和旧版升级；源码推送本身不触发客户端更新。
 - `Start-App.cmd` 先运行更新器再启动 EXE；保留用户数据目录和旧版备份/回滚路径。不要为了验证清空登录态、数据库或客户安装目录。使用隔离安装目录和隔离 `LOCALAPPDATA` 测试。
 
 ## 6. 已验证、已知故障与下一步
